@@ -1,0 +1,7 @@
+Metadata-Version: 2.1
+Name: vinagpu
+Version: 0.0.1
+Summary: VinaGPU - AutoDock Vina on GPU, using Docker
+Requires: scipy
+Requires: meeko
+Requires: docker

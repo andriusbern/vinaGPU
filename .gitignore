@@ -1,0 +1,5 @@
+output/**
+!output/.gitkeep
+
+# Ignore all python cache files
+__pycache__/

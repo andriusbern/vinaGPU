@@ -1,0 +1,1 @@
+from .dock import VinaGPU
