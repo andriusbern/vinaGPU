@@ -7,6 +7,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 
 
+
 def run_executable(cmd, shell=True, **kwargs):
     """ Run executable command and return output from stdout and stderr """
     proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE, shell=shell, **kwargs)
@@ -84,7 +85,7 @@ class VinaGPU:
         if len(smiles) > 0:
             ligand_pdbqt_paths = []
 
-        results_path = os.path.join(self.out_path, output_subfolder)
+        results_path = os.path.join(os.getcwd(), output_subfolder)
         os.makedirs(results_path, exist_ok=True)
 
         ### Preprocessing

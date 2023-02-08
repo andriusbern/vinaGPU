@@ -3,3 +3,9 @@ output/**
 
 # Ignore all python cache files
 __pycache__/
+
+# exclude all .pyc files
+*.pyc
+
+# package egg info
+vinagpu.egg-info/

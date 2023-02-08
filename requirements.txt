@@ -1,0 +1,3 @@
+meeko
+scipy
+docker
