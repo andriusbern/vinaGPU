@@ -1,8 +1,0 @@
-README.md
-setup.py
-vinagpu/__init__.py
-vinagpu/dock.py
-vinagpu.egg-info/PKG-INFO
-vinagpu.egg-info/SOURCES.txt
-vinagpu.egg-info/dependency_links.txt
-vinagpu.egg-info/top_level.txt
