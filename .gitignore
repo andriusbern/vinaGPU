@@ -10,3 +10,4 @@ P21919_test/
 *.pyc
 
 # package egg info
+*.egg-info
