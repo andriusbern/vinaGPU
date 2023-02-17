@@ -55,7 +55,7 @@ t0 = time.time()
 
 parallel_dock(target_pdb_path=target_pdb_path, smiles=smiles,      
               output_subfolder=output_subfolder,
-              num_cpu_workers=0, exhaustiveness=8, threads_per_cpu_worker=8,
+              num_cpu_workers=8, exhaustiveness=8, threads_per_cpu_worker=8,
               gpu_ids=[0,1,2,3], workers_per_gpu=2)
 
 t1 = time.time()
