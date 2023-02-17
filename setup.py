@@ -10,7 +10,9 @@ from setuptools import setup
 requirements = [
     'scipy',
     'meeko',
-    'docker']
+    'docker',
+    'dimorphite-dl',
+    'vina']
 
 
 setup(
@@ -19,5 +21,4 @@ setup(
     description='VinaGPU - AutoDock Vina on GPU, using Docker',
     requires=requirements,
     packages=['vinagpu'],
-
 )

@@ -1,3 +1,5 @@
 meeko
 scipy
 docker
+dimorphite-dl
+vina

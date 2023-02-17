@@ -4,10 +4,14 @@ output/**
 # Ignore all python cache files
 __pycache__/
 vinagpu.egg-info/
-P21919_test/
+tests/
 
 # exclude all .pyc files
 *.pyc
 
 # package egg info
 *.egg-info
+
+# exclude all folders with name 'output'
+output/
+**/output/
