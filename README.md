@@ -1,8 +1,10 @@
 
 
-# Vina-GPU via docker
+# High throughput molecular docking using *Vina-GPU + Docker*
 
-This package contains a minimalistic python API for running VinaGPU via a docker image.
+<img src="examples/logo.png"  width="200" height="200">
+
+This package contains a minimalistic python API for high throughput docking by using [VinaGPU](https://github.com/DeltaGroupNJUPT/Vina-GPU) via a Docker image.
 
 ## Features:
 
@@ -53,14 +55,15 @@ with open('examples/valid_smiles.txt', 'r') as f:
 
 t0 = time.time()
 
-parallel_dock(target_pdb_path=target_pdb_path, smiles=smiles,      
+parallel_dock(target_pdb_path=target_pdb_path, 
+              smiles=smiles,      
               output_subfolder=output_subfolder,
-              num_cpu_workers=8, exhaustiveness=8, threads_per_cpu_worker=8,
-              gpu_ids=[0,1,2,3], workers_per_gpu=2)
+              num_cpu_workers=8, exhaustiveness=8, threads_per_cpu_worker=8, # CPU worker parameters
+              gpu_ids=[0,1,2,3], workers_per_gpu=2, search_depth=5)          # GPU Worker parameters
 
 t1 = time.time()
-print('Ligands per second: {}'.format(len(smiles) / (t1 - t0)))
-print('Total time: {}'.format(t1 - t0))
+print(f'Docked ligands per second: {len(smiles) / (t1 - t0)}'
+print(f'Total time: {t1 - t0}')
 ```
 
 ## Usage, single GPU worker

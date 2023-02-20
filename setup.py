@@ -11,7 +11,7 @@ requirements = [
     'scipy',
     'meeko',
     'docker',
-    'dimorphite-dl',
+    'dimorphite_dl',
     'vina']
 
 

@@ -160,7 +160,7 @@ class VinaCPU(BaseVinaRunner):
 
             dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
             timing += [round(time.time() - t0, 2)]
-            print(f'+ {self.device}:{self.device_id:2+} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(protomers_list)} | Affinity values: {scores[i]}...')
+            print(f'+ {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(protomers_list)} | Affinity values: {scores[i]}...')
             # returns the best_affinity which is the lowest energy of all the poses
         return scores
 

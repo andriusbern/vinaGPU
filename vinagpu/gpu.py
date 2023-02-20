@@ -1,27 +1,8 @@
-import os, time, datetime, re
-import shutil
+import os, time, datetime
 import docker
 import random
-import subprocess as sp
 from vinagpu.base import BaseVinaRunner
-
-
-def run_executable(cmd, shell=True, **kwargs):
-    """ Run executable command and return output from stdout and stderr """
-    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE, shell=shell, **kwargs)
-    stdout, stderr = proc.communicate()
-    return (stdout, stderr)
-
-
-def process_stdout(stdout):
-    """ Processes the stdout of Vina, returns the affinity of each docking orientation. """
-    affinities = []
-    is_int = re.compile(r'^\s*\d+\s*$')
-    for line in stdout.splitlines():
-        if bool(is_int.match(line.decode('utf-8')[:4])):
-            orientation_id, affinity, dist1, dist2  = line.split()
-            affinities += [float(affinity)]
-    return affinities
+from vinagpu.utils import process_stdout, run_executable, write_to_log
 
 
 class VinaGPU(BaseVinaRunner):
@@ -80,24 +61,14 @@ class VinaGPU(BaseVinaRunner):
         results_path = os.path.join(self.out_path, output_subfolder)
         os.makedirs(results_path, exist_ok=True)
 
-        ### Preprocessing
-        # Prepare target
-        # if target_pdb_path.endswith('.pdb'): # If target is a .pdb file, convert to .pdbqt
-        #     target_pdbqt_path = os.path.join(results_path, os.path.basename(target_pdb_path).replace('.pdb', '.pdbqt'))
-        #     if not os.path.exists(target_pdbqt_path):
-        #         target_pdbqt_path = self.prepare_target(target_pdb_path, out_path=results_path)
-        # else: # If target is already in .pdbqt format, just copy it to the results_path
-        #     target_pdbqt_path = os.path.join(results_path, os.path.basename(target_pdb_path))
-        #     if not os.path.exists(target_pdbqt_path):
-        #         shutil.copyfile(target_pdb_path, target_pdbqt_path)
-        
+        # Prepare target .pdbqt file
         target_pdbqt_path = self.prepare_target(target_pdb_path, output_path=results_path)
 
         # Prepare ligand .pdbqt files
         print('Processing ligands...') if verbose else None
-        for i, mol in enumerate(smiles):    
-            uid = random.randint(0, 1000000)
-            ligand_pdbqt_path = os.path.join(results_path, f'ligand_{i}_{uid}.pdbqt')
+        for i, mol in enumerate(smiles): 
+            uid = random.randint(0, 1000000)   
+            ligand_pdbqt_path = os.path.join(results_path, f'ligand_{uid}.pdbqt')
             out_path = self.prepare_ligand(mol, out_path=ligand_pdbqt_path)
             if out_path is not None:
                 ligand_pdbqt_paths.append(ligand_pdbqt_path)
@@ -110,6 +81,7 @@ class VinaGPU(BaseVinaRunner):
         try:
             timing, dates = [], []
             all_scores = [[0] for i in range(len(smiles))]
+            target = os.path.basename(target_pdb_path).strip('.pdbqt')
             for i, ligand_file in enumerate(basenames):
                 t0 = time.time()
 
@@ -129,20 +101,32 @@ class VinaGPU(BaseVinaRunner):
 
                 cmd = './Vina-GPU ' + ' '.join([f'--{k} {v}' for k, v in docking_args.items()])
 
-                _, (stdout, stderr) = self.container.exec_run(
-                    cmd=cmd,
-                    workdir=self.vina_dir,
-                    demux=True)
+                try:
+                    _, (stdout, stderr) = self.container.exec_run(
+                        cmd=cmd,
+                        workdir=self.vina_dir,
+                        demux=True)
 
-                scores = process_stdout(stdout)
+                    scores = process_stdout(stdout)
 
-                if len(scores) > 0 and scores != [None]:
-                    all_scores[i] = scores
+                    if len(scores) > 0 and scores != [None]:
+                        all_scores[i] = scores
 
-                timing += [round(time.time() - t0, 2)]
-                dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
-                if verbose:
-                    print(f'- {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(basenames)} | Affinity values: {all_scores[i]}...')
+                    timing += [round(time.time() - t0, 2)]
+                    dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                    if verbose:
+                        print(f'- {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(basenames)} | Affinity values: {all_scores[i]}...')
+                    
+                    if write_log:
+                        log_path = os.path.join(results_path, 'log.tsv')
+                        write_to_log(log_path, smiles[i], target, all_scores[i], ligand_paths_docked[i])
+
+                    if clean: # Remove intermediate files (undocked ligand .pdbqt files)
+                        os.remove(ligand_pdbqt_paths[i])
+                        os.remove(ligand_paths_docked[i])
+                except Exception as d:
+                    print(d)
+                    
 
         except Exception as e:
             print(f'Error has occurred while docking ligand {i}: {e, stderr}')
@@ -152,26 +136,8 @@ class VinaGPU(BaseVinaRunner):
         finally:
             self.remove_docker_container()
 
-        if write_log:
-            log_path = os.path.join(results_path, 'log.tsv')
-            header = 'date\ttarget\taffinity\tsmiles\ttime'
-            exists = os.path.exists(log_path)
-            with open(log_path, 'a') as f:
-                f.write(header + '\n') if not exists else None
-                for i, scores in enumerate(all_scores):
-                    try:
-                        f.write(f'{dates[i]}\t{os.path.basename(target_pdb_path)}\t{scores[0]}\t{smiles[i]}\t{timing[i]}\n')
-                    except:
-                        return all_scores
-
         if visualize_in_pymol or self.visualize: 
             self.visualize_results(target_pdb_path, ligand_paths_docked, scores=all_scores)
-
-        if clean: # Remove intermediate files (undocked ligand .pdbqt files)
-            for path in ligand_pdbqt_paths:
-                os.remove(path)
-            for path in ligand_paths_docked:
-                os.remove(path)
     
         return all_scores
         

@@ -5,12 +5,7 @@ from meeko import MoleculePreparation
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import docker
-
-def run_executable(cmd, shell=True, **kwargs):
-    """ Run executable command and return output from stdout and stderr """
-    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.PIPE, shell=shell, **kwargs)
-    stdout, stderr = proc.communicate()
-    return (stdout, stderr)
+from vinagpu.utils import run_executable
 
 
 class BaseVinaRunner:
@@ -25,9 +20,9 @@ class BaseVinaRunner:
         self.device_id = None
         
         path = os.getcwd()
+        self.out_path = os.path.join(path, 'output')
         self.adfr_suite_docker_path = '/htd/ADFRsuite-1.0'
         self.adfr_suite_path = adfr_suite_path # Local path to ADFR Suite (optional)
-        self.out_path = os.path.join(path, 'output')
         self.vina_dir = '/vina-gpu-dockerized/vina'
         self.docking_dir = self.vina_dir + '/docking'
         self.molecule_preparation = MoleculePreparation(rigid_macrocycles=True)
@@ -46,17 +41,18 @@ class BaseVinaRunner:
         """
 
         container = self.client.containers.run(
-            command='sleep infinity',
-            detach=True,
+            command='sleep infinity', # Keeps the container running until it is killed
+            detach=True,              # Run container in background
             **self.docker_kwargs)
         
         return container
-
-        
+ 
 
     def remove_docker_container(self):
-        """ Stop Vina-GPU docker container """
-        self.container.remove(force=True)
+        """
+        Stop Vina-GPU docker container
+        """
+        self.container.remove(force=True) 
         self.container = None
         
 
@@ -120,15 +116,15 @@ class BaseVinaRunner:
         if pdb_path.endswith('.pdb'): # If target is a .pdb file, convert to .pdbqt
             target_pdbqt_path = os.path.join(output_path, os.path.basename(pdb_path).replace('.pdb', '.pdbqt'))
             if not os.path.isfile(target_pdbqt_path):
-                if out_path is None:
-                    out_path = self.out_path
+                if output_path is None:
+                    output_path = self.out_path
                 basename = os.path.basename(pdb_path)
-                out_file_path = os.path.join(out_path, basename)                 # This is where the target .pdb file will be saved
+                out_file_path = os.path.join(output_path, basename)              # This is where the target .pdb file will be saved
                 shutil.copyfile(pdb_path, out_file_path)                         # Copy target .pdb file to output folder   
                 chain_basename = basename.replace('.pdb', f'_chain_{chain}.pdb') # Name of the .pdb file with only the selected chain
-                chain_pdb_path = os.path.join(out_path, chain_basename)          # Full path to the .pdb file with only the selected chain
+                chain_pdb_path = os.path.join(output_path, chain_basename)       # Full path to the .pdb file with only the selected chain
                 pdbqt_basename = basename.replace('.pdb', '.pdbqt')              # Name of the .pdbqt file
-                target_pdbqt_path = os.path.join(out_path, pdbqt_basename)       # Full path to the .pdbqt file
+                target_pdbqt_path = os.path.join(output_path, pdbqt_basename)    # Full path to the .pdbqt file
 
                 print(f'Preparing {basename} for docking: selecting chain [{chain}] and creating {target_pdbqt_path} file...')
 
@@ -148,7 +144,7 @@ class BaseVinaRunner:
                     if self.container is None:
                         self.container = self.start_docker_container()
                     try:
-                        workdir = self.docking_dir + '/' + os.path.basename(out_path)
+                        workdir = self.docking_dir + '/' + os.path.basename(output_path)
                         print(workdir)
                         cmd = f"bash -c 'pdb_selchain -{chain} {basename} | pdb_delhetatm | \
                                 pdb_tidy > {chain_basename}'"

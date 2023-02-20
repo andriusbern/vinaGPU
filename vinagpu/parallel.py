@@ -1,10 +1,7 @@
 from multiprocessing import Pool, current_process, Queue
-import time
 from vinagpu import VinaCPU, VinaGPU
-from vinagpu.utils import check_smiles
-import warnings
-warnings.filterwarnings('ignore')
-
+import os
+from vinagpu.utils import read_log
 
 def docking_job(smiles: list):
     """
@@ -25,6 +22,7 @@ def docking_job(smiles: list):
 
     try:
         # Run processing on GPU/CPU 
+        docking_kwargs['smiles'] = smiles
         scores = runners[device_id].dock(**docking_kwargs)
         
         print('{}: finished'.format(ident))
@@ -84,6 +82,7 @@ def parallel_dock(target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subf
 
     # initialize the queue with the GPU ids
     num_gpus = len(gpu_ids)
+    num_gpu_workers = workers_per_gpu * num_gpus
     for gpu_ids in range(num_gpus):
         for _ in range(workers_per_gpu):
             queue.put(gpu_ids)
@@ -94,12 +93,30 @@ def parallel_dock(target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subf
     
     ## Split the list of SMILES into <num_splits> parts
     n_smiles = len(smiles)
-    splits = num_gpus * workers_per_gpu + num_cpu_workers
-    smiles_splits = [smiles[i:i + n_smiles // splits] for i in range(0, n_smiles, n_smiles // splits)]
+    splits = num_gpu_workers + num_cpu_workers
+    w = n_smiles // splits
+    smiles_splits = [smiles[i*w:(i+1)*w] for i in range(splits)]
 
-    # Start the pool
-    pool = Pool(processes=workers_per_gpu * num_gpus + num_cpu_workers)
+    # Start the worker pool
+    pool = Pool(processes=num_gpu_workers + num_cpu_workers)
     for _ in pool.imap_unordered(docking_job, smiles_splits):
         pass
     pool.close()
     pool.join()
+
+    ## Read generated scores from the log file
+    log = read_log(os.path.join('output', output_subfolder, 'log.tsv'))
+    scores = []
+    processed_smiles = [entry[0] for entry in log]
+    for ligand in smiles:
+        if ligand in processed_smiles:
+            idx = processed_smiles.index(ligand)
+            best_score = log[idx][2][0]
+            scores.append(best_score)
+        else:
+            scores.append(100.0)
+
+    return scores
+
+
+
