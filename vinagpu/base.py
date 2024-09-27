@@ -15,12 +15,15 @@ class BaseVinaRunner:
         - Ligand preparation via rdkit and meeko
         - Target preparation via ADFR Suite and pdb_tools
     """
-    def __init__(self, device, adfr_suite_path=None):
+    def __init__(self, device, adfr_suite_path=None, out_path=None):
         self.device = device
         self.device_id = None
         
-        path = os.getcwd()
-        self.out_path = os.path.join(path, 'output')
+        if out_path is None:
+            path = os.getcwd()
+            self.out_path = os.path.join(path, 'out')
+        else:
+            self.out_path = out_path
         self.adfr_suite_docker_path = '/htd/ADFRsuite-1.0'
         self.adfr_suite_path = adfr_suite_path # Local path to ADFR Suite (optional)
         self.vina_dir = '/vina-gpu-dockerized/vina'
@@ -112,30 +115,32 @@ class BaseVinaRunner:
         """
         ## Output filenames
 
+        use_chain = False
         # Prepare target
         if pdb_path.endswith('.pdb'): # If target is a .pdb file, convert to .pdbqt
-            target_pdbqt_path = os.path.join(output_path, os.path.basename(pdb_path).replace('.pdb', '.pdbqt'))
-            if not os.path.isfile(target_pdbqt_path):
+            filename_pdb = os.path.basename(pdb_path)
+            filename_pdbqt = filename_pdb.replace('.pdb', '.pdbqt')
+            filename_chain = filename_pdb.replace('.pdb', f'_chain_{chain}.pdb')
+            input_pdb_path = os.path.join(output_path, filename_pdb)
+            output_pdbqt_path = os.path.join(output_path, filename_pdbqt)
+
+            if not os.path.isfile(output_pdbqt_path):
                 if output_path is None:
                     output_path = self.out_path
-                basename = os.path.basename(pdb_path)
-                out_file_path = os.path.join(output_path, basename)              # This is where the target .pdb file will be saved
-                shutil.copyfile(pdb_path, out_file_path)                         # Copy target .pdb file to output folder   
-                chain_basename = basename.replace('.pdb', f'_chain_{chain}.pdb') # Name of the .pdb file with only the selected chain
-                chain_pdb_path = os.path.join(output_path, chain_basename)       # Full path to the .pdb file with only the selected chain
-                pdbqt_basename = basename.replace('.pdb', '.pdbqt')              # Name of the .pdbqt file
-                target_pdbqt_path = os.path.join(output_path, pdbqt_basename)    # Full path to the .pdbqt file
+                shutil.copyfile(pdb_path, os.path.join(output_path, filename_pdb)   )                         # Copy target .pdb file to output folder   
+                chain_pdb_path = os.path.join(output_path, filename_chain)       # Full path to the .pdb file with only the selected chain
+                # target_pdbqt_path = os.path.join(output_path, pdbqt_basename)    # Full path to the .pdbqt file
 
-                print(f'Preparing {basename} for docking: selecting chain [{chain}] and creating {target_pdbqt_path} file...')
+                print(f'Preparing {filename_pdb} for docking: selecting chain [{chain}] and creating {output_pdbqt_path} file...')
 
                 if not use_docker: # Processing locally using ADFR Suite and pdb_tools
-                    cmd = f'pdb_selchain -{chain} {pdb_path} | pdb_delhetatm | \
+                    cmd = f'pdb_selchain -{chain} {input_pdb_path} | pdb_delhetatm | \
                             pdb_tidy > {chain_pdb_path}'
                     run_executable(cmd, shell=True)
 
                     adfr_binary = os.path.join(self.adfr_suite_path, 'bin', 'prepare_receptor')
                     cmd = f'{adfr_binary} -r {chain_pdb_path} \
-                            -o {target_pdbqt_path} -A checkhydrogens'
+                            -o {output_pdbqt_path} -A checkhydrogens'
                     run_executable(cmd)
                 
                 else: # Processing within the docker container
@@ -146,20 +151,39 @@ class BaseVinaRunner:
                     try:
                         workdir = self.docking_dir + '/' + os.path.basename(output_path)
                         print(workdir)
-                        cmd = f"bash -c 'pdb_selchain -{chain} {basename} | pdb_delhetatm | \
-                                pdb_tidy > {chain_basename}'"
-                        self.container.exec_run(
-                            cmd=cmd,
-                            workdir=workdir,
-                            demux=True)
+                        ## list files in the workdir
 
-                        ## Prepare the target for docking using ADFR Suite 'prepare_receptor' binary
-                        adfr_binary = os.path.join(self.adfr_suite_docker_path, 'bin', 'prepare_receptor')
-                        cmd = f'{adfr_binary} -r {chain_basename} -o {pdbqt_basename} -A checkhydrogens'
-                        self.container.exec_run(
-                            cmd=cmd,
-                            workdir=workdir,
-                            demux=True)
+                        if use_chain:
+
+                            cmd = f"bash -c 'pdb_selchain -{chain} {filename_pdb} | pdb_delhetatm | \
+                                    pdb_tidy > {filename_chain}'"
+                            self.container.exec_run(
+                                cmd=cmd,
+                                workdir=workdir,
+                                demux=True)
+
+                            ## Prepare the target for docking using ADFR Suite 'prepare_receptor' binary
+                            adfr_binary = os.path.join(self.adfr_suite_docker_path, 'bin', 'prepare_receptor')
+                            cmd = f'{adfr_binary} -r {filename_chain} -o {filename_pdbqt} -A checkhydrogens'
+                            _, (stdout, stderr) = self.container.exec_run(
+                                cmd=cmd,
+                                workdir=workdir,
+                                demux=True)
+                            print(stdout)
+                            print(stderr)
+                        else:
+
+
+                            ## Prepare the target for docking using ADFR Suite 'prepare_receptor' binary
+                            adfr_binary = os.path.join(self.adfr_suite_docker_path, 'bin', 'prepare_receptor')
+                            cmd = f'{adfr_binary} -r {filename_pdb} -o {filename_pdbqt} -A checkhydrogens'
+                            _, (stdout, stderr) = self.container.exec_run(
+                                cmd=cmd,
+                                workdir=workdir,
+                                demux=True)
+                            print(stdout)
+                            print(stderr)
+                        
                     except Exception as e:
                         print(f'Error while preparing target: {e}')
                     except KeyboardInterrupt:
@@ -169,14 +193,14 @@ class BaseVinaRunner:
 
                 # target_pdbqt_path = self.prepare_target(pdb_path, out_path=output_path)
         elif pdb_path.endswith('.pdbqt'): # If target is already in .pdbqt format, just copy it to the results_path
-            target_pdbqt_path = os.path.join(output_path, os.path.basename(pdb_path))
-            if not os.path.exists(target_pdbqt_path):
-                shutil.copyfile(pdb_path, target_pdbqt_path)
+            # target_pdbqt_path = os.path.join(output_path, os.path.basename(pdb_path))
+            if not os.path.exists(output_pdbqt_path):
+                shutil.copyfile(pdb_path, output_pdbqt_path)
         else:
-            target_pdbqt_path = None
+            # target_pdbqt_path = None
             raise ValueError(f'Invalid file type: {pdb_path}')
 
-        return target_pdbqt_path
+        return output_pdbqt_path
 
 
     def visualize_results(self, target_pdb_path, ligand_pdbqt_path, scores):

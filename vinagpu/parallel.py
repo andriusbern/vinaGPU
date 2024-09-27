@@ -36,7 +36,7 @@ def parallel_dock(target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subf
                   box_center=(0,0,0), box_size=(20,20,20), search_depth=3,
                   threads=256, threads_per_call=256, clean=True, verbose=True, 
                   visualize_in_pymol=False, write_log=True, 
-                  gpu_ids=[0,1,2,3], workers_per_gpu=2,
+                  gpu_ids=[0,1,2,3], workers_per_gpu=1,
                   num_cpu_workers=0, threads_per_cpu_worker=1, exhaustiveness=8):
     """
     Dock a list of SMILES using multiple GPUs or CPUs (using Autodock Vina).

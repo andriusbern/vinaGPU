@@ -104,7 +104,7 @@ def decompress_string(compressed):
     return zlib.decompress(bytes.fromhex(compressed)).decode('utf-8')
 
 
-def write_to_log(log_path, smiles, target, scores, pdbqt_path=None):
+def write_to_log(log_path, smiles, target, scores, pdbqt_path=None, **kwargs):
     """
     Writes a log file
     Arguments:
@@ -114,10 +114,11 @@ def write_to_log(log_path, smiles, target, scores, pdbqt_path=None):
         scores (list)             : list of scores
         pdbqt_path (str)          : path to pdbqt file
     """
+    kwargs = {k: str(v) for k, v in kwargs.items()}
 
     if not os.path.isfile(log_path):
         with open(os.path.join(log_path), 'w') as f:
-            header = '\t'.join(['smiles', 'target', 'scores', 'pdbqt'])
+            header = '\t'.join(['smiles', 'target', 'scores'] + list(kwargs.keys()) + ['pdbqt'])
             f.write(header + '\n')
 
     if pdbqt_path is not None:
@@ -137,7 +138,8 @@ def write_to_log(log_path, smiles, target, scores, pdbqt_path=None):
         scores = ';'.join(z)
 
     with open(log_path, 'a') as f:
-        f.write('\t'.join([smiles, target, scores, pdbqt])+'\n')
+        
+        f.write('\t'.join([smiles, target, scores] + list(kwargs.values()) + [pdbqt]) + '\n')
     
 
 def read_log(log_path):

@@ -15,3 +15,5 @@ tests/
 # exclude all folders with name 'output'
 output/
 **/output/
+out/
+test.ipynb
