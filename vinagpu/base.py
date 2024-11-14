@@ -24,6 +24,7 @@ class BaseVinaRunner:
             self.out_path = os.path.join(path, 'out')
         else:
             self.out_path = out_path
+            
         self.adfr_suite_docker_path = '/htd/ADFRsuite-1.0'
         self.adfr_suite_path = adfr_suite_path # Local path to ADFR Suite (optional)
         self.vina_dir = '/vina-gpu-dockerized/vina'
