@@ -24,10 +24,10 @@ class BaseVinaRunner:
             self.out_path = os.path.join(path, 'out')
         else:
             self.out_path = out_path
-            
+
         self.adfr_suite_docker_path = '/htd/ADFRsuite-1.0'
         self.adfr_suite_path = adfr_suite_path # Local path to ADFR Suite (optional)
-        self.vina_dir = '/vina-gpu-dockerized/vina'
+        self.vina_dir = '/vina-gpu-dockerized/Vina-GPU-2.1/QuickVina2-GPU-2.1'
         self.docking_dir = self.vina_dir + '/docking'
         self.molecule_preparation = MoleculePreparation(rigid_macrocycles=True)
         self.client = docker.from_env()

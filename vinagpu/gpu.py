@@ -11,7 +11,7 @@ class VinaGPU(BaseVinaRunner):
         - Ligand preparation via rdkit and meeko
         - Target preparation via ADFR Suite and pdb_tools
     """
-    def __init__(self, docker_image_name='andriusbern/vina-gpu', devices=['0'], visualize=False):
+    def __init__(self, docker_image_name='vina-cl', devices=['0'], visualize=False):
         super(VinaGPU, self).__init__(device='gpu')
 
 
@@ -31,7 +31,7 @@ class VinaGPU(BaseVinaRunner):
 
     def dock(self, target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subfolder='', 
              box_center=(0,0,0), box_size=(20,20,20), search_depth=3,
-             threads=256, threads_per_call=256, clean=True, verbose=True, 
+             threads=2048, threads_per_call=256, clean=True, verbose=True, 
              visualize_in_pymol=False, write_log=True, metadata={}, **kwargs):
         """
         Use Vina-GPU docker image to dock ligands (list of SMILES or .pdbqt files) to the target. 
@@ -95,55 +95,56 @@ class VinaGPU(BaseVinaRunner):
             timing, dates = [], []
             all_scores = [[0] for i in range(len(smiles))]
             target = os.path.basename(target_pdb_path).strip('.pdbqt')
-            for i, ligand_file in enumerate(basenames):
-                t0 = time.time()
+            # for i, ligand_file in enumerate(basenames):
+            t0 = time.time()
 
-                if ligand_pdbqt_paths[i] is None:
-                    continue
+            # if ligand_pdbqt_paths[i] is None:
+                # continue
 
-                docking_args = dict(
-                    receptor = f'docking/targets/{os.path.basename(target_pdbqt_path)}',
-                    ligand   = f'docking/ligands/{ligand_file}',
-                    out      = f'docking/docked/{basenames[i]}',
-                    center_x = box_center[0],
-                    center_y = box_center[1],
-                    center_z = box_center[2],
-                    size_x   = box_size[0],
-                    size_y   = box_size[1],
-                    size_z   = box_size[2],
-                    thread   = threads,
-                    search_depth = search_depth,
-                    thread_per_call = threads_per_call)
+            docking_args = dict(
+                receptor = f'docking/targets/{os.path.basename(target_pdbqt_path)}',
+                ligand_directory   = f'docking/ligands/',
+                output_directory      = f'docking/docked/',
+                center_x = box_center[0],
+                center_y = box_center[1],
+                center_z = box_center[2],
+                size_x   = box_size[0],
+                size_y   = box_size[1],
+                size_z   = box_size[2],
+                thread   = threads,
+                search_depth = search_depth,
+                opencl_binary_path = '/vina-gpu-dockerized/Vina-GPU-2.1/QuickVina2-GPU-2.1',
+                )
 
-                cmd = './Vina-GPU ' + ' '.join([f'--{k} {v}' for k, v in docking_args.items()])
+            cmd = './QuickVina2-GPU-2-1 ' + ' '.join([f'--{k} {v}' for k, v in docking_args.items()])
 
-                try:
-                    _, (stdout, stderr) = self.container.exec_run(
-                        cmd=cmd,
-                        workdir=self.vina_dir,
-                        demux=True)
-                    
-                    print(stderr)
+            try:
+                _, (stdout, stderr) = self.container.exec_run(
+                    cmd=cmd,
+                    workdir=self.vina_dir,
+                    demux=True)
+                print(stdout) 
+                print(stderr)
 
-                    scores = process_stdout(stdout)
+                scores = process_stdout(stdout)
 
-                    if len(scores) > 0 and scores != [None]:
-                        all_scores[i] = scores
+                if len(scores) > 0 and scores != [None]:
+                    all_scores[i] = scores
 
-                    timing += [round(time.time() - t0, 2)]
-                    dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
-                    if verbose:
-                        print(f'- {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(basenames)} | Affinity values: {all_scores[i]}...')
-                    
-                    if write_log:
-                        log_path = os.path.join(results_path, 'log.tsv')
-                        write_to_log(log_path, smiles[i], target, all_scores[i], ligand_paths_docked[i], **metadata[i])
+                timing += [round(time.time() - t0, 2)]
+                dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
+                if verbose:
+                    print(f'- {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(basenames)} | Affinity values: {all_scores[i]}...')
+                
+                if write_log:
+                    log_path = os.path.join(results_path, 'log.tsv')
+                    write_to_log(log_path, smiles[i], target, all_scores[i], ligand_paths_docked[i], **metadata[i])
 
-                    if clean: # Remove intermediate files (undocked ligand .pdbqt files)
-                        os.remove(ligand_pdbqt_paths[i])
-                        os.remove(ligand_paths_docked[i])
-                except Exception as d:
-                    print(d)
+                if clean: # Remove intermediate files (undocked ligand .pdbqt files)
+                    os.remove(ligand_pdbqt_paths[i])
+                    os.remove(ligand_paths_docked[i])
+            except Exception as d:
+                print(d)
 
         except Exception as e:
             print(f'Error has occurred while docking ligand {i}: {e, stderr}')

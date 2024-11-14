@@ -15,13 +15,18 @@ def run_executable(cmd, shell=True, **kwargs):
 
 def process_stdout(stdout):
     """ Processes the stdout of Vina, returns the affinity of each docking orientation. """
-    affinities = []
+    affinities, buffer = [], []
     is_int = re.compile(r'^\s*\d+\s*$')
     for line in stdout.splitlines():
+        # If line starts with '----'
+        if line.startswith(b'----'):
+            affinities += [buffer]
+            buffer = []
+
         if bool(is_int.match(line.decode('utf-8')[:4])):
             orientation_id, affinity, dist1, dist2  = line.split()
-            affinities += [float(affinity)]
-    return affinities
+            buffer += [float(affinity)]
+    return affinities[1:]
 
 
 def standardize_mol(mol):

@@ -5,13 +5,15 @@ from vinagpu import VinaGPU
 target_pdb_path = os.path.join('examples', 'ccr.pdb') 
 box_center = (5.1, 28, 187.6) # Active site coordinates of P21918
 box_size   = (16.2, 17.8, 17.4)
-output_subfolder = 'ccr_t' # results stored at: "./P21918_test"
+output_subfolder = 'ccr_ti' # results stored at: "./P21918_test"
 
 with open('examples/SL_5000_10.csv') as f:
-    smiles = f.readlines()[:10]
+    smiles = f.readlines()[:500]
     print(smiles)
     smiles = [x.strip('\n') for x in smiles]
     smiles = [x.strip('"') for x in smiles]
+
+print(len(smiles))
 
 metadata = [{'a': 1, 'b': 2} for _ in range(len(smiles))]
 print(smiles)
