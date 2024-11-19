@@ -1,6 +1,7 @@
 from multiprocessing import Pool, current_process, Queue
 from vinagpu import VinaCPU, VinaGPU
 import os
+import time
 from vinagpu.utils import read_log
 
 def docking_job(smiles: list):
@@ -18,7 +19,7 @@ def docking_job(smiles: list):
         print('{}: starting process on CPU {}'.format(ident, device_id))
     else:
         runners = gpu_runners
-        print('{}: starting process on GPU {}'.format(ident, device_id))
+        print(f'{ident}: starting process on GPU {device_id}, docking {len(smiles)} ligands.')
 
     try:
         # Run processing on GPU/CPU 
@@ -28,6 +29,11 @@ def docking_job(smiles: list):
         print('{}: finished'.format(ident))
     except Exception as e:
         print(e)
+        runners[device_id].remove_docker_container() 
+    # KeyboardsInterrupt is raised when the process is terminated by the user
+    except KeyboardInterrupt:
+        print('Process terminated by the user.')
+        runners[device_id].remove_docker_container()
     finally:
         queue.put(device_id)
 
@@ -93,16 +99,18 @@ def parallel_dock(target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subf
     
     ## Split the list of SMILES into <num_splits> parts
     n_smiles = len(smiles)
-    splits = num_gpu_workers + num_cpu_workers
-    w = n_smiles // splits
+    splits = num_gpu_workers
+    w = (n_smiles // splits) + 1
     smiles_splits = [smiles[i*w:(i+1)*w] for i in range(splits)]
 
+    t0 = time.time() 
     # Start the worker pool
     pool = Pool(processes=num_gpu_workers + num_cpu_workers)
     for _ in pool.imap_unordered(docking_job, smiles_splits):
         pass
     pool.close()
     pool.join()
+    print(f'Docking finished. Time elapsed: {time.time() - t0} seconds.')
 
     ## Read generated scores from the log file
     log = read_log(os.path.join('output', output_subfolder, 'log.tsv'))

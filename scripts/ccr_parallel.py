@@ -7,7 +7,7 @@ from vinagpu import parallel_dock
 target_pdb_path = os.path.join('examples', 'ccr.pdb') 
 box_center = (5.1, 28, 187.6) # Active site coordinates of P21918
 box_size   = (16.2, 17.8, 17.4)
-output_subfolder = 'ccr_parallel_1worker' # results stored at: "./P21918_test"
+output_subfolder = 'ccr_parallel_3workers_optimal' # results stored at: "./P21918_test"
 
 with open('examples/SL_5000_10.csv') as f:
     smiles = f.readlines()
@@ -15,18 +15,19 @@ with open('examples/SL_5000_10.csv') as f:
     smiles = [x.strip('\n') for x in smiles]
     smiles = [x.strip('"') for x in smiles]
 
+smiles = smiles
 
-print(smiles)
+# print(smiles)
 t0 = time.time()
 
 parallel_dock(target_pdb_path=target_pdb_path, 
-              smiles=smiles,      
+              smiles=smiles[1:150],      
               box_center=box_center,
               box_size=box_size,
               output_subfolder=output_subfolder,
               num_cpu_workers=0, exhaustiveness=8, threads_per_cpu_worker=8, # CPU worker parameters
-              gpu_ids=[0], workers_per_gpu=1, search_depth=9)
-          #    threads=1024, threads_per_call=128)          # GPU Worker parameters
+              gpu_ids=[1, 2, 3], workers_per_gpu=1, search_depth=9,
+              threads=1024)          # GPU Worker parameters
 
 t1 = time.time()
 print(f'Docked ligands per second: {len(smiles) / (t1 - t0)}')

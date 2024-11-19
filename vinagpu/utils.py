@@ -5,6 +5,7 @@ import zlib
 import re
 import subprocess as sp
 import os 
+from collections import OrderedDict
 
 def run_executable(cmd, shell=True, **kwargs):
     """ Run executable command and return output from stdout and stderr """
@@ -16,17 +17,79 @@ def run_executable(cmd, shell=True, **kwargs):
 def process_stdout(stdout):
     """ Processes the stdout of Vina, returns the affinity of each docking orientation. """
     affinities, buffer = [], []
+    return_dict = OrderedDict()
     is_int = re.compile(r'^\s*\d+\s*$')
     for line in stdout.splitlines():
-        # If line starts with '----'
-        if line.startswith(b'----'):
-            affinities += [buffer]
-            buffer = []
 
         if bool(is_int.match(line.decode('utf-8')[:4])):
             orientation_id, affinity, dist1, dist2  = line.split()
             buffer += [float(affinity)]
-    return affinities[1:]
+
+        if line.startswith(b'Writing'):
+            ligand_id = line.split()[-2].decode('utf-8').split('/')[-1]
+            affinities += [buffer]
+            return_dict[ligand_id] = buffer
+            buffer = []
+
+    return affinities, return_dict
+
+
+def partition_output(output_text):
+    """
+    Splits the docking output text into individual ligand result chunks.
+    
+    Parameters:
+    output_text (str): The raw output text from the docking software.
+    
+    Returns:
+    list of str: Each element is a chunk of text for one ligand.
+    """
+    ## Change from bytes to string
+    output_text = output_text.decode('utf-8')
+
+    # Split the output based on "Refining ligand" which indicates the start of a new ligand chunk
+    ligand_chunks = re.split(r"\nRefining ligand", output_text)
+    
+    # The first chunk is often empty or irrelevant, so we remove it
+    if not ligand_chunks[0].strip():
+        ligand_chunks.pop(0)
+    
+    # Prepend the "Refining ligand" to each chunk for consistency
+    ligand_chunks = ["Refining ligand" + chunk for chunk in ligand_chunks]
+    
+    return ligand_chunks
+
+def extract_energies_and_ids(ligand_chunks):
+    """
+    Extracts ligand IDs and free energy values from each ligand chunk.
+    
+    Parameters:
+    ligand_chunks (list of str): Each element is a chunk of text for one ligand.
+    
+    Returns:
+    list of dict: Each dictionary contains the ligand ID and a list of free energy values.
+    """
+    results = []
+    
+    for chunk in ligand_chunks:
+        # Extract ligand ID (using regex to capture the filename part after './test_out/')
+        ligand_id_match = re.search(r"Refining ligand \./test_out/([^ ]+)", chunk)
+        if ligand_id_match:
+            ligand_id = ligand_id_match.group(1)
+        else:
+            continue  # Skip if no ID is found (unexpected case)
+        
+        # Find all affinity values (free energies in kcal/mol) in the chunk
+        affinities = re.findall(r"^\s*\d+\s+(-?\d+\.\d+)", chunk, re.MULTILINE)
+        affinities = [float(affinity) for affinity in affinities]
+        
+        # Store results in a dictionary format
+        results.append({
+            "ligand_id": ligand_id,
+            "affinities": affinities
+        })
+    
+    return results
 
 
 def standardize_mol(mol):

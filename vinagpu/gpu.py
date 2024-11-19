@@ -1,8 +1,9 @@
 import os, time, datetime
 import docker
-import random
 from vinagpu.base import BaseVinaRunner
-from vinagpu.utils import process_stdout, run_executable, write_to_log, compress_string, decompress_string
+from vinagpu.utils import process_stdout, compress_string, decompress_string, extract_energies_and_ids
+import numpy as np
+
 
 class VinaGPU(BaseVinaRunner):
     """
@@ -29,9 +30,9 @@ class VinaGPU(BaseVinaRunner):
             device_requests=[dev_req(device_ids=devices, capabilities=[['gpu']])])
         
 
-    def dock(self, target_pdb_path, smiles=[], ligand_pdbqt_paths=[], output_subfolder='', 
+    def dock(self, target_pdb_path, smiles=[], ligand_pdbqt_paths=[], ids=None, output_subfolder='', 
              box_center=(0,0,0), box_size=(20,20,20), search_depth=3,
-             threads=2048, threads_per_call=256, clean=True, verbose=True, 
+             threads=2048, threads_per_call=256, verbose=True, 
              visualize_in_pymol=False, write_log=True, metadata={}, **kwargs):
         """
         Use Vina-GPU docker image to dock ligands (list of SMILES or .pdbqt files) to the target. 
@@ -74,10 +75,14 @@ class VinaGPU(BaseVinaRunner):
         target_pdbqt_path = self.prepare_target(target_pdb_path, output_path=pdb_path)
 
         # Prepare ligand .pdbqt files
-        print('Processing ligands...') if verbose else None
+        print(f'Ligprepping {len(smiles)} ligands...') if verbose else None
         for i, mol in enumerate(smiles): 
-            uid = random.randint(0, 1000000)   
-            ligand_pdbqt_path = os.path.join(ligands_path, f'ligand_{uid}.pdbqt')
+            if ids:
+                uid = ids[i]
+                ## Pad id with zeros
+                # uid = str(uid).zfill(9)
+             
+            ligand_pdbqt_path = os.path.join(ligands_path, f'{uid}.pdbqt')
             out_path = self.prepare_ligand(mol, out_path=ligand_pdbqt_path)
             if out_path is not None:
                 ligand_pdbqt_paths.append(ligand_pdbqt_path)
@@ -85,9 +90,12 @@ class VinaGPU(BaseVinaRunner):
                 print(f'Error processing ligand {i+1} with SMILES: {mol}')
                 ligand_pdbqt_paths.append('')
 
+        
         basenames = [os.path.basename(p) for p in ligand_pdbqt_paths] # Ligand basenames (format 'ligand_0.pdbqt')
         # basenames_docked = [lig.replace('.pdbqt', '_docked.pdbqt') for lig in basenames] # Docked ligand basenames (format 'ligand_0_docked.pdbqt')
         ligand_paths_docked = [os.path.join(docked_path, p) for p in basenames]
+        ## Add '_out' to the ligand paths
+        ligand_paths_docked = [p.replace('.pdbqt', '_out.pdbqt') for p in ligand_paths_docked]
         
         ### Start Vina-GPU docker container
         self.container = self.start_docker_container()
@@ -100,7 +108,7 @@ class VinaGPU(BaseVinaRunner):
 
             # if ligand_pdbqt_paths[i] is None:
                 # continue
-
+            print(f'Docking {len(smiles)} ligands...') if verbose else None
             docking_args = dict(
                 receptor = f'docking/targets/{os.path.basename(target_pdbqt_path)}',
                 ligand_directory   = f'docking/ligands/',
@@ -123,26 +131,26 @@ class VinaGPU(BaseVinaRunner):
                     cmd=cmd,
                     workdir=self.vina_dir,
                     demux=True)
-                print(stdout) 
+                # print(stdout) 
                 print(stderr)
 
-                scores = process_stdout(stdout)
+                scores, score_dict = process_stdout(stdout)
+                # print(scores)
+                # print(score_dict)
 
-                if len(scores) > 0 and scores != [None]:
-                    all_scores[i] = scores
+                ## Re-order scores based on the original ligand order
+                # for k, v in score_dict.items():
+                    # all_scores[int(k)] = v
 
                 timing += [round(time.time() - t0, 2)]
                 dates += [datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")]
                 if verbose:
                     print(f'- {self.device}:{self.device_id} | [{dates[-1]} | t={timing[-1]}s] Docked ligand {i+1}/{len(basenames)} | Affinity values: {all_scores[i]}...')
                 
-                if write_log:
-                    log_path = os.path.join(results_path, 'log.tsv')
-                    write_to_log(log_path, smiles[i], target, all_scores[i], ligand_paths_docked[i], **metadata[i])
+                # if write_log:
+                #     log_path = os.path.join(results_path, 'log.tsv')
+                #     write_to_log(log_path, smiles[i], target, all_scores[i], ligand_paths_docked[i], **metadata[i])
 
-                if clean: # Remove intermediate files (undocked ligand .pdbqt files)
-                    os.remove(ligand_pdbqt_paths[i])
-                    os.remove(ligand_paths_docked[i])
             except Exception as d:
                 print(d)
 
@@ -153,11 +161,8 @@ class VinaGPU(BaseVinaRunner):
             print('Docking interrupted by user')
         finally:
             self.remove_docker_container()
-
-        if visualize_in_pymol or self.visualize: 
-            self.visualize_results(target_pdb_path, ligand_paths_docked, scores=all_scores)
     
-        return all_scores, ligand_paths_docked
+        return score_dict, ligand_paths_docked
     
     def dock_dataframe(self, dataframe, target_pdb_path, smiles_col='SMILES', output_subfolder='', 
                        active_site_coords=(0,0,0), box_size=(20,20,20), search_depth=9,
@@ -167,18 +172,29 @@ class VinaGPU(BaseVinaRunner):
         Dock ligands in a pandas dataframe
         """
         smiles = dataframe[smiles_col].tolist()
+        ## Ids for each ligand (numeric or based on InChI)
+        ids = dataframe['id'].tolist() if 'id' in dataframe.columns else range(len(smiles))
         metadata = dataframe.to_dict(orient='records') # Metadata for each ligand
         # remove SMILES column from metadata
         metadata = [{k: v for k, v in d.items() if k != smiles_col} for d in metadata]
 
         print(f'Docking {len(smiles)} ligands...') if verbose else None
 
-        scores, paths =  self.dock(target_pdb_path, smiles=smiles, output_subfolder=output_subfolder, ligand_pdbqt_paths=[],
+        scores, paths =  self.dock(target_pdb_path, smiles=smiles, ids=ids, output_subfolder=output_subfolder, ligand_pdbqt_paths=[],
                          active_site_coords=active_site_coords, box_size=box_size, search_depth=search_depth,
                          threads=threads, threads_per_call=threads_per_call, clean=False, verbose=verbose, 
                          visualize_in_pymol=visualize_in_pymol, write_log=write_log, metadata=metadata, **kwargs)
+
+        print(scores)        
+        # Scores is a dictionary with keys as ligand indices and values as lists of docking scores
+        # Match the scores with the dataframe
+
+        for k, v in scores.items():
+            cols = [f'dock_score_{i}' for i in range(9)]
+            dataframe.loc[int(k), cols] = v
         
-        dataframe['docking_scores'] = scores
+        dataframe['ligand_pdbqt'] = paths
+
         pdbqts = []
         for path in paths:
             if os.path.exists(path) and os.path.isfile(path):
@@ -188,12 +204,8 @@ class VinaGPU(BaseVinaRunner):
                 pdbqts.append('')
 
         dataframe['pdbqt'] = pdbqts
-        dataframe['min_docking_score'] = [min(s) for s in scores]
         dataframe['target_pdb'] = os.path.basename(target_pdb_path).strip('.pdb')
         
-        # if clean: # Remove intermediate files (undocked ligand .pdbqt files)
-        #     for path in paths:
-        #         os.remove(path)
             
         return dataframe
         
